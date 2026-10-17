@@ -31,9 +31,9 @@ the router owns the problem.
 
 - **No root, ever.** No sudo, no capabilities, no packet capture. It runs
   as your user and reads what any process may read.
-- **You won't feel it.** About 1.3 % of one CPU core and ~6 MB of memory,
-  daemon and the shell's readers together — no fan, no stutter, nothing
-  competing with your work.
+- **You won't feel it.** About 1.3 % of one CPU core and ~6 MB of memory
+  (proportional set size), daemon and the shell's readers together — no
+  fan, no stutter, nothing competing with your work.
 - **It doesn't clog your line.** The probes are pings and payload-free
   handshakes and add up to a few MB an hour; the hourly speed check is
   up to about 40 MB on a fast line and a fraction of that on a slower one,
@@ -41,11 +41,12 @@ the router owns the problem.
   unless you press the button.
 - **Private by construction.** Everything it measures stays on your machine
   — no account, no cloud, no telemetry. Even your own IP is shown masked, so
-  a screenshot of the panel is safe to post. The one thing it asks the
-  outside world is whether a newer version exists: once a day it asks the
-  repository you installed from, sends nothing about you, and shows a small
-  marker if so. Turn that off in the panel's Setup tab (the cog) and it
-  asks nothing.
+  a screenshot of the panel is safe to post. It talks to the repository
+  you installed from for two things only, and sends nothing about you: once
+  per installed version it downloads its own binary from that repository's
+  release, and once a day it asks whether a newer version exists, showing a
+  small marker if so. Turn the daily check off in the panel's Setup tab
+  (the cog).
 
 ## Made for Omarchy
 
@@ -62,12 +63,15 @@ launch.
 omarchy plugin add https://github.com/fcatuhe/omarchy-nexthop.git --enable
 ```
 
-The daemon is a Rust binary built from this checkout: the first start (and
-the first start after an update) runs `cargo build --release`, which takes
-about a minute. Requirements: a Rust toolchain (`cargo` on the PATH or in
-`~/.cargo/bin`), `curl` and `git` (`git` only serves the daily update
-check), `wl-copy` for Copy report, optionally `nmcli` for the metered flag
-and `speedtest` (Ookla) for peak tests. ICMP probes use unprivileged ping
+The daemon is a single x86-64 binary with SQLite built in, published on
+each release rather than kept in git, so a clone stays small. On its first
+start after an install or update, `bin/nexthop` downloads the binary for
+this version from the release of the repository you installed from, and
+keeps it only if it matches the SHA-256 in `bin/nexthop.sha256`; CI rebuilds
+it from the source in a pinned image and fails unless that checksum
+matches (`scripts/build-binary`). Requirements: `curl`, `git` and `jq` (all
+present on a stock Omarchy), `wl-copy` for Copy report, optionally `nmcli`
+for the metered flag and `speedtest` (Ookla) for peak tests. ICMP probes use unprivileged ping
 sockets, which systemd allows by default (`net.ipv4.ping_group_range`).
 
 | Latency, by leg | Speed |
@@ -253,7 +257,10 @@ theme change.
 To keep monitoring while the shell is down, install the optional
 systemd unit (see the comments in [`nexthopd.service`](nexthopd.service),
 which also confines the daemon with the systemd sandboxing it can live inside);
-the daemon holds a lock, so the shell service simply attaches.
+the daemon holds a lock, so the shell service simply attaches. A unit
+installed before 0.2.72 still starts the Python daemon, which no longer
+exists: run the `sed` from the unit's comments again, then
+`systemctl --user daemon-reload && systemctl --user restart nexthopd`.
 
 ### What it talks to, and what that costs
 
@@ -309,7 +316,16 @@ remove `~/.config/systemd/user/nexthopd.service`.
 cargo test                              # fixtures recorded from real hardware
 cargo run --release -- daemon           # run the daemon in the foreground
 cargo test --release -- --ignored       # live checks on this machine
+scripts/build-binary                    # dist/nexthop-x86_64 and its sha256 (needs docker)
+python3 -m unittest discover -s test    # the QML helpers and the launcher
 ```
+
+A change to the source needs the new checksum in `bin/nexthop.sha256` in
+the same commit, or CI fails; the failed run prints the checksum it built
+and keeps the binary as an artifact. A release bumps the version in both
+`manifest.json` and `Cargo.toml` (a test holds them equal) and pushes the
+tag `v<version>`, on which CI publishes the binary to the release. To run a
+local build through the plugin, put it at `bin/.cache/<version>/nexthop`.
 
 Design mockups live in `design/` as the source artboards of the project's
 design canvas.

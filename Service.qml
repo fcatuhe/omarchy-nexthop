@@ -81,7 +81,7 @@ Item {
     id: versionStream
     running: true
     command: ["sh", "-c",
-              'cd "$1" && exec ./target/release/nexthop stream manifest live --interval 2',
+              'cd "$1" && exec ./bin/nexthop stream manifest live --interval 2',
               "sh", root.pluginDir]
     stdout: SplitParser {
       splitMarker: "\n"
@@ -137,7 +137,7 @@ Item {
     // `nexthop daemon`, and its start time must match the one the daemon
     // published — a recycled pid can share a number, never a start time.
     retireProc.command = ["sh", "-c",
-      'cd "$1" && exec ./target/release/nexthop retire --pid "$2" --start "$3"',
+      'cd "$1" && exec ./bin/nexthop retire --pid "$2" --start "$3"',
       "sh", root.pluginDir, String(pid), String(startTicks)]
     retireProc.running = true
     respawnTimer.restart()
@@ -158,7 +158,7 @@ Item {
 
   Process {
     id: daemon
-    command: ["sh", "-c", 'cd "$1" && exec ./bin/nexthopd',
+    command: ["sh", "-c", 'cd "$1" && exec ./bin/nexthop daemon',
               "sh", root.pluginDir]
     running: true
 

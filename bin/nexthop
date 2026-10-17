@@ -1,4 +1,46 @@
 #!/bin/sh
-# The Nexthop query CLI. History, events, tests, reports — all in JSON,
-# except `report`, which is the plain-text ISP-ticket summary.
-exec "$(dirname "$(realpath "$0")")/../target/release/nexthop" "$@"
+# Runs the nexthop binary for this checkout's version. The first run after an
+# install or update fetches it from the release of the repository this
+# checkout came from, and keeps it only if it matches bin/nexthop.sha256.
+set -eu
+root=$(cd "$(dirname "$(realpath "$0")")/.." && pwd)
+version=$(jq -er .version "$root/manifest.json")
+cache=$root/bin/.cache
+exe=$cache/$version/nexthop
+
+fail() {
+  echo "nexthop: $*" >&2
+  exit 1
+}
+
+release_url() {
+  origin=$(git -C "$root" remote get-url origin) || fail "this checkout has no origin remote"
+  repo=$(printf '%s\n' "$origin" | sed -En 's#/$##; s#\.git$##; s#^(https://|ssh://git@|git@)github\.com[:/]([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)$#\2#p')
+  [ -n "$repo" ] || fail "origin $origin is not a GitHub repository"
+  echo "https://github.com/$repo/releases/download/v$version/nexthop-x86_64"
+}
+
+fetch() {
+  [ "$(uname -m)" = x86_64 ] || fail "only x86-64 is published; build from source with cargo"
+  want=$(cut -d' ' -f1 "$root/bin/nexthop.sha256")
+  url=$(release_url)
+  mkdir -p "$cache/$version"
+  tmp=$(mktemp "$cache/$version/.download.XXXXXX")
+  trap 'rm -f "$tmp"' EXIT
+  curl -fsSL --proto '=https' --tlsv1.2 --max-time 120 -o "$tmp" "$url" || fail "cannot download $url"
+  got=$(sha256sum "$tmp" | cut -d' ' -f1)
+  [ "$got" = "$want" ] || fail "$url has sha256 $got, bin/nexthop.sha256 expects $want"
+  chmod 755 "$tmp"
+  mv "$tmp" "$exe"
+  trap - EXIT
+  find "$cache" -mindepth 1 -maxdepth 1 -type d ! -name "$version" -exec rm -rf {} +
+}
+
+if [ ! -x "$exe" ]; then
+  mkdir -p "$cache"
+  exec 9>"$cache/.lock"
+  flock 9
+  [ -x "$exe" ] || fetch
+  exec 9>&-
+fi
+exec "$exe" "$@"

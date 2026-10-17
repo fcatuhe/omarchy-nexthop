@@ -7,10 +7,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Toolchain from rust-toolchain.toml
+        run: rustup toolchain install
       - name: Unit tests
         run: cargo test --locked
       - name: Lints
@@ -28,3 +27,38 @@ jobs:
           curl -fsSL --proto '=https' -o /tmp/omarchy-plugin-validate \
             https://raw.githubusercontent.com/omacom/omarchy/f8835df6449c5349ad96fd75e338b2280bb8e0f8/bin/omarchy-plugin-validate
           bash /tmp/omarchy-plugin-validate .
+
+  # bin/nexthop downloads the release binary only if it matches bin/nexthop.sha256; this proves the source builds to it.
+  binary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build in the pinned image
+        run: scripts/build-binary
+      - name: The build matches bin/nexthop.sha256
+        run: cd dist && sha256sum -c ../bin/nexthop.sha256
+      - name: Keep the build, and its checksum for when the check above fails
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nexthop-x86_64
+          path: dist/nexthop-x86_64
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, binary]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The tag is the manifest version
+        run: test "${GITHUB_REF_NAME}" = "v$(jq -r .version manifest.json)"
+      - name: Build in the pinned image
+        run: scripts/build-binary
+      - name: The build matches bin/nexthop.sha256
+        run: cd dist && sha256sum -c ../bin/nexthop.sha256
+      - name: Publish the binary on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/nexthop-x86_64 --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

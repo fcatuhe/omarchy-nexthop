@@ -35,7 +35,7 @@ BarWidget {
     id: stateStream
     running: true
     command: ["sh", "-c",
-              'cd "$1" && exec ./target/release/nexthop stream live apps recent',
+              'cd "$1" && exec ./bin/nexthop stream live apps recent',
               "sh", root.pluginDir]
     stdout: SplitParser {
       splitMarker: "\n"
@@ -44,7 +44,7 @@ BarWidget {
     onExited: streamRestart.start()
   }
 
-  // The reader dies with the daemon's package on an update; bring it back.
+  // Bring the reader back whenever it exits.
   Timer {
     id: streamRestart
     interval: 2000
@@ -221,7 +221,7 @@ BarWidget {
   // script — the same form every other Process here uses.
   Process {
     id: peakRequest
-    command: ["sh", "-c", 'cd "$1" && exec ./target/release/nexthop peak',
+    command: ["sh", "-c", 'cd "$1" && exec ./bin/nexthop peak',
               "sh", root.pluginDir]
   }
 

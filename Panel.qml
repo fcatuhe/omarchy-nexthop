@@ -123,7 +123,7 @@ Panel {
     // shell redirection here would be a truncating, symlink-following write
     // at a predictable path.
     configWriter.command = ["sh", "-c",
-      'cd "$1" && exec ./target/release/nexthop save-config "$2"',
+      'cd "$1" && exec ./bin/nexthop save-config "$2"',
       "sh", pluginDir, JSON.stringify(cfg)]
     configWriter.running = true
   }
@@ -140,7 +140,7 @@ Panel {
     historyWindow = window
     historyLoading = true
     historyProc.command = ["sh", "-c",
-      "cd \"$1\" && exec ./target/release/nexthop query --window \"$2\"",
+      "cd \"$1\" && exec ./bin/nexthop query --window \"$2\"",
       "sh", pluginDir, window]
     historyProc.running = true
   }
@@ -159,7 +159,7 @@ Panel {
   property var testsData: null
   function requestTests() {
     testsProc.command = ["sh", "-c",
-      "cd \"$1\" && exec ./target/release/nexthop tests --limit 24",
+      "cd \"$1\" && exec ./bin/nexthop tests --limit 24",
       "sh", pluginDir]
     testsProc.running = true
   }
@@ -174,7 +174,7 @@ Panel {
   property var eventsData: null
   function requestEvents(window) {
     eventsProc.command = ["sh", "-c",
-      "cd \"$1\" && exec ./target/release/nexthop events --window \"$2\"",
+      "cd \"$1\" && exec ./bin/nexthop events --window \"$2\"",
       "sh", pluginDir, window || "7d"]
     eventsProc.running = true
   }
@@ -214,14 +214,14 @@ Panel {
     peakArmed = false
     peakDisarm.stop()
     peakProc.command = ["sh", "-c",
-      "cd \"$1\" && exec ./target/release/nexthop peak", "sh", pluginDir]
+      "cd \"$1\" && exec ./bin/nexthop peak", "sh", pluginDir]
     peakProc.running = true
   }
   Process { id: peakProc }
 
   function copyReport(window) {
     reportProc.command = ["sh", "-c",
-      "cd \"$1\" && ./target/release/nexthop report --window \"$2\" | wl-copy",
+      "cd \"$1\" && ./bin/nexthop report --window \"$2\" | wl-copy",
       "sh", pluginDir, window || "24h"]
     reportProc.running = true
   }

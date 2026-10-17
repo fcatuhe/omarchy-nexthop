@@ -1,13 +1,13 @@
 [package]
 name = "nexthop"
-version = "0.2.71"
+version = "0.2.72"
 edition = "2024"
 license = "MIT"
 publish = false
 
 [dependencies]
 libc = "0.2"
-rusqlite = "0.40"
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
