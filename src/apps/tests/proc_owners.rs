@@ -2,9 +2,28 @@ use super::super::owners::{Owner, Owners, comm_name, socket_inode};
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone)]
+struct TestClock(Arc<Mutex<(f64, f64)>>);
+
+impl TestClock {
+    fn advance(&self, s: f64) {
+        self.0.lock().unwrap().0 += s;
+    }
+
+    fn tick_per_read(&self, step: f64) {
+        self.0.lock().unwrap().1 = step;
+    }
+
+    fn now(&self) -> f64 {
+        self.0.lock().unwrap().0
+    }
+}
 
 struct FakeProc {
     root: PathBuf,
+    clock: TestClock,
 }
 
 impl FakeProc {
@@ -12,7 +31,7 @@ impl FakeProc {
         let root = std::env::temp_dir().join(format!("nexthop-apps-{}-{tag}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
-        Self { root }
+        Self { root, clock: TestClock(Arc::new(Mutex::new((1000.0, 0.0)))) }
     }
 
     fn process(&self, pid: i32, comm: &str, fds: &[(i32, &str)]) {
@@ -28,8 +47,21 @@ impl FakeProc {
         fs::remove_dir_all(self.root.join(pid.to_string())).unwrap();
     }
 
+    fn close(&self, pid: i32, fd: i32) {
+        fs::remove_file(self.root.join(pid.to_string()).join("fd").join(fd.to_string())).unwrap();
+    }
+
     fn owners(&self) -> Owners {
-        Owners::with_root(self.root.to_str().unwrap())
+        let clock = self.clock.0.clone();
+        Owners::with_root(
+            self.root.to_str().unwrap(),
+            Box::new(move || {
+                let mut c = clock.lock().unwrap();
+                let t = c.0;
+                c.0 += c.1;
+                t
+            }),
+        )
     }
 }
 
@@ -162,4 +194,95 @@ fn a_new_socket_of_a_known_owner_is_found_without_a_full_scan() {
     o.resolve([555, 556, 600], FAR);
     assert_eq!(o.scans, 2);
     assert_eq!(o.get(600).cloned(), owner(200, "curl"));
+}
+
+fn many_fds(wanted: &str) -> Vec<(i32, String)> {
+    let mut fds: Vec<(i32, String)> = (10..3000).map(|fd| (fd, "/dev/null".to_string())).collect();
+    fds.push((3000, wanted.to_string()));
+    fds
+}
+
+fn as_refs(fds: &[(i32, String)]) -> Vec<(i32, &str)> {
+    fds.iter().map(|(fd, t)| (*fd, t.as_str())).collect()
+}
+
+#[test]
+fn full_scan_stops_inside_a_process_with_thousands_of_fds_at_the_deadline() {
+    let p = FakeProc::new("fd-deadline");
+    p.process(100, "hog", &as_refs(&many_fds("socket:[555]")));
+    let mut o = p.owners();
+    p.clock.tick_per_read(0.001);
+    // each clock read costs 1 ms, so the scan gets 100 reads, far fewer than the 2991 fds
+    assert!(!o.resolve([555], p.clock.now() + 0.1));
+    assert_eq!(o.get(555), None);
+}
+
+#[test]
+fn known_owner_pass_stops_inside_a_process_with_thousands_of_fds_at_the_deadline() {
+    let p = FakeProc::new("hot-deadline");
+    p.process(100, "hog", &[(3, "socket:[555]")]);
+    let mut o = p.owners();
+    o.resolve([555], FAR);
+    p.process(100, "hog", &as_refs(&many_fds("socket:[556]")));
+    p.clock.tick_per_read(0.001);
+    assert!(!o.resolve([555, 556], p.clock.now() + 0.1));
+    assert_eq!(o.get(556), None);
+    assert_eq!(o.scans, 1);
+}
+
+#[test]
+fn name_refresh_stops_at_the_deadline() {
+    let p = FakeProc::new("names-deadline");
+    p.process(100, "before", &[(3, "socket:[555]")]);
+    let mut o = p.owners();
+    o.resolve([555], FAR);
+    fs::write(p.root.join("100/comm"), "after\n").unwrap();
+    o.resolve([555], 0.0);
+    assert_eq!(o.get(555).cloned(), owner(100, "before"));
+    o.resolve([555], FAR);
+    assert_eq!(o.get(555).cloned(), owner(100, "after"));
+}
+
+#[test]
+fn a_socket_passed_to_another_live_process_is_reattributed_after_30_s() {
+    let p = FakeProc::new("passed");
+    p.process(100, "parent", &[(3, "socket:[555]"), (4, "/dev/null")]);
+    let mut o = p.owners();
+    o.resolve([555], FAR);
+    p.close(100, 3);
+    p.process(200, "child", &[(5, "socket:[555]")]);
+    p.clock.advance(29.0);
+    o.resolve([555], FAR);
+    assert_eq!(o.get(555).cloned(), owner(100, "parent"));
+    assert_eq!(o.scans, 1);
+    p.clock.advance(2.0);
+    assert!(o.resolve([555], FAR));
+    assert_eq!(o.get(555).cloned(), owner(200, "child"));
+    assert_eq!(o.scans, 2);
+}
+
+#[test]
+fn an_unresolvable_inode_is_retried_after_30_s() {
+    let p = FakeProc::new("negative");
+    p.process(100, "curl", &[(3, "socket:[555]")]);
+    let mut o = p.owners();
+    o.resolve([555, 557], FAR);
+    p.process(200, "late", &[(4, "socket:[557]")]);
+    p.clock.advance(29.0);
+    o.resolve([555, 557], FAR);
+    assert_eq!(o.get(557), None);
+    p.clock.advance(2.0);
+    o.resolve([555, 557], FAR);
+    assert_eq!(o.get(557).cloned(), owner(200, "late"));
+    assert_eq!(o.scans, 2);
+}
+
+#[test]
+fn no_periodic_scan_without_live_sockets() {
+    let p = FakeProc::new("idle");
+    p.process(100, "curl", &[(3, "socket:[555]")]);
+    let mut o = p.owners();
+    p.clock.advance(60.0);
+    assert!(o.resolve([], FAR));
+    assert_eq!(o.scans, 0);
 }

@@ -158,18 +158,19 @@ pub fn parse_batch(buf: &[u8], seq: u32, out: &mut Vec<DiagSock>) -> io::Result<
     Ok(false)
 }
 
-fn open_socket(timeout_s: f64) -> io::Result<OwnedFd> {
+fn open_socket() -> io::Result<OwnedFd> {
     // SAFETY: plain socket(2) call; the result is checked before use.
     let fd = unsafe { libc::socket(libc::AF_NETLINK, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, NETLINK_SOCK_DIAG) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: fd is a freshly created descriptor we own.
-    let sock = unsafe { OwnedFd::from_raw_fd(fd) };
-    let tv = libc::timeval {
-        tv_sec: timeout_s.trunc() as libc::time_t,
-        tv_usec: (timeout_s.fract() * 1e6) as libc::suseconds_t,
-    };
+    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+}
+
+fn set_recv_timeout(sock: &OwnedFd, timeout_s: f64) -> io::Result<()> {
+    let us = ((timeout_s * 1e6).ceil() as i64).max(1);
+    let tv = libc::timeval { tv_sec: (us / 1_000_000) as libc::time_t, tv_usec: (us % 1_000_000) as libc::suseconds_t };
     // SAFETY: tv outlives the call and its size is passed.
     let rc = unsafe {
         libc::setsockopt(
@@ -180,10 +181,7 @@ fn open_socket(timeout_s: f64) -> io::Result<OwnedFd> {
             size_of::<libc::timeval>() as libc::socklen_t,
         )
     };
-    if rc < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(sock)
+    if rc < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 fn send_request(sock: &OwnedFd, req: &[u8]) -> io::Result<()> {
@@ -204,8 +202,17 @@ fn send_request(sock: &OwnedFd, req: &[u8]) -> io::Result<()> {
     if rc < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
-fn recv_datagram(sock: &OwnedFd, buf: &mut [u8]) -> io::Result<usize> {
+fn timed_out() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "sock_diag dump timed out")
+}
+
+pub fn recv_before(sock: &OwnedFd, buf: &mut [u8], deadline: f64, clock: impl Fn() -> f64) -> io::Result<usize> {
     loop {
+        let remaining = deadline - clock();
+        if remaining <= 0.0 {
+            return Err(timed_out());
+        }
+        set_recv_timeout(sock, remaining)?;
         // SAFETY: buf is valid for writes of buf.len() bytes.
         let n = unsafe { libc::recv(sock.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len(), libc::MSG_TRUNC) };
         if n >= 0 {
@@ -218,25 +225,20 @@ fn recv_datagram(sock: &OwnedFd, buf: &mut [u8]) -> io::Result<usize> {
         let err = io::Error::last_os_error();
         match err.kind() {
             io::ErrorKind::Interrupted => continue,
-            io::ErrorKind::WouldBlock => {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "sock_diag dump timed out"));
-            }
+            io::ErrorKind::WouldBlock => return Err(timed_out()),
             _ => return Err(err),
         }
     }
 }
 
 pub fn dump(max_bytes: usize, deadline: f64) -> io::Result<Vec<DiagSock>> {
-    let sock = open_socket((deadline - monotonic()).max(0.001))?;
+    let sock = open_socket()?;
     let mut buf = vec![0u8; RECV_BUF];
     let mut out = Vec::new();
     let mut total = 0usize;
     send_request(&sock, &build_request(1))?;
     loop {
-        if monotonic() > deadline {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "sock_diag dump timed out"));
-        }
-        let n = recv_datagram(&sock, &mut buf)?;
+        let n = recv_before(&sock, &mut buf, deadline, monotonic)?;
         total += n;
         if total > max_bytes || parse_batch(&buf[..n], 1, &mut out)? {
             break;
