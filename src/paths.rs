@@ -67,10 +67,13 @@ pub fn lock_path() -> PathBuf {
 
 pub fn plugin_dir() -> PathBuf {
     let exe = std::env::current_exe().and_then(|p| p.canonicalize()).unwrap_or_default();
-    exe.ancestors()
-        .skip(1)
-        .find(|dir| dir.join("manifest.json").is_file())
-        .map(Path::to_path_buf)
+    plugin_dir_for(non_empty_env("NEXTHOP_PLUGIN_DIR"), &exe)
+}
+
+fn plugin_dir_for(launcher_root: Option<PathBuf>, exe: &Path) -> PathBuf {
+    launcher_root
+        .filter(|dir| dir.join("manifest.json").is_file())
+        .or_else(|| exe.ancestors().skip(1).find(|dir| dir.join("manifest.json").is_file()).map(Path::to_path_buf))
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
 }
 
@@ -82,6 +85,18 @@ pub fn manifest_path() -> PathBuf {
 mod tests {
     use super::*;
     use crate::testutil::TempDir;
+
+    #[test]
+    fn the_plugin_dir_is_the_launcher_root_even_when_the_binary_is_cached_elsewhere() {
+        let tmp = TempDir::new();
+        let root = tmp.path().join("plugin");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::write(root.join("manifest.json"), "{}").unwrap();
+        let cached = tmp.path().join("cache").join("abc").join("nexthop");
+        assert_eq!(plugin_dir_for(Some(root.clone()), &cached), root);
+        assert_eq!(plugin_dir_for(None, &root.join("bin").join("nexthop")), root);
+        assert_ne!(plugin_dir_for(Some(tmp.path().join("cache")), &cached), tmp.path().join("cache"));
+    }
 
     #[test]
     fn runtime_dir_prefers_xdg_runtime_dir() {
