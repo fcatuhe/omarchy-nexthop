@@ -102,6 +102,11 @@ impl<K: Hash + Eq + Clone, V> Ordered<K, V> {
         self.items.iter()
     }
 
+    pub fn retain(&mut self, mut keep: impl FnMut(&K, &V) -> bool) {
+        self.items.retain(|(k, v)| keep(k, v));
+        self.index = self.items.iter().enumerate().map(|(i, (k, _))| (k.clone(), i)).collect();
+    }
+
     pub fn values(&self) -> impl Iterator<Item = &V> {
         self.items.iter().map(|(_, v)| v)
     }
@@ -275,6 +280,7 @@ impl Default for AppTraffic {
 
 impl AppTraffic {
     pub const HISTORY: usize = 20;
+    pub const MAX_APPS: usize = 64;
     pub const MAX_DIAG_BYTES: usize = 4 * 1024 * 1024;
     pub const MAX_SOCKETS: usize = 10_000;
     pub const POLL_DEADLINE_S: f64 = 1.5;
@@ -346,6 +352,7 @@ impl AppTraffic {
             tot[0] += v[0];
             tot[1] += v[1];
         }
+        self.forget_quietest_idle_apps(&interval);
         for (app, _) in self.totals.iter() {
             let point = match interval.get(app) {
                 Some(v) => [py_round(v[0] as f64 / dt, 1), py_round(v[1] as f64 / dt, 1)],
@@ -377,6 +384,23 @@ impl AppTraffic {
         self.latency = latency_stats(cur.values());
         self.prev = cur;
         self.prev_t = Some(now);
+    }
+
+    fn forget_quietest_idle_apps(&mut self, active: &Ordered<String, [u64; 3]>) {
+        let excess = self.totals.len().saturating_sub(Self::MAX_APPS);
+        if excess == 0 {
+            return;
+        }
+        let mut idle: Vec<(u64, String)> = self
+            .totals
+            .iter()
+            .filter(|(app, _)| active.get(app.as_str()).is_none())
+            .map(|(app, t)| (t[0] + t[1], app.clone()))
+            .collect();
+        idle.sort();
+        let gone: HashSet<String> = idle.into_iter().take(excess).map(|(_, app)| app).collect();
+        self.totals.retain(|app, _| !gone.contains(app));
+        self.history.retain(|app, _| !gone.contains(app));
     }
 
     fn hist(&self, app: &str) -> Vec<[f64; 2]> {

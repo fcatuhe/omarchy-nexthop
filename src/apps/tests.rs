@@ -274,6 +274,23 @@ fn top_ranks_busiest_then_idle_by_session_total() {
 }
 
 #[test]
+fn apps_tracked_are_bounded_by_dropping_the_quietest_idle_ones() {
+    let mut t = AppTraffic::new();
+    t.fold(Socks::default(), 0.0);
+    for i in 1..=100u16 {
+        let mut fresh = Socks::default();
+        fresh.insert(key(i), Sock::new(&format!("app{i}"), i as i32, 0, 1000 + u64::from(i)));
+        t.fold(fresh, 3.0 * f64::from(i));
+    }
+    assert_eq!(t.totals.len(), AppTraffic::MAX_APPS);
+    assert_eq!(t.history.len(), AppTraffic::MAX_APPS);
+    assert!(t.totals.get("app100").is_some());
+    assert!(t.totals.get("app99").is_some());
+    assert!(t.totals.get("app1").is_none());
+    assert_eq!(t.top(8)[0].name, "app100");
+}
+
+#[test]
 fn history_keeps_twenty_intervals() {
     let mut t = AppTraffic::new();
     let base = socks(vec![Sock::new("a", 1, 0, 0)]);
