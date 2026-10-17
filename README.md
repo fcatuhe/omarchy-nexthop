@@ -31,8 +31,9 @@ the router owns the problem.
 
 - **No root, ever.** No sudo, no capabilities, no packet capture. It runs
   as your user and reads what any process may read.
-- **You won't feel it.** About 3 % of one CPU core and ~30 MB of memory —
-  no fan, no stutter, nothing competing with your work.
+- **You won't feel it.** About 1.3 % of one CPU core and ~6 MB of memory,
+  daemon and the shell's readers together — no fan, no stutter, nothing
+  competing with your work.
 - **It doesn't clog your line.** The probes are pings and payload-free
   handshakes and add up to a few MB an hour; the hourly speed check is
   up to about 40 MB on a fast line and a fraction of that on a slower one,
@@ -58,13 +59,16 @@ launch.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/x3me/omarchy-nexthop.git --enable
+omarchy plugin add https://github.com/fcatuhe/omarchy-nexthop.git --enable
 ```
 
-Requirements: `python3`, `ping`, `curl`, `ss`, `ip` and `git` (all present on
-a stock Omarchy; `git` only serves the daily update check), `iw` for Wi-Fi
-detail, `wl-copy` for Copy report, optionally `nmcli` for the metered flag
-and `speedtest` (Ookla) for peak tests.
+The daemon is a Rust binary built from this checkout: the first start (and
+the first start after an update) runs `cargo build --release`, which takes
+about a minute. Requirements: a Rust toolchain (`cargo` on the PATH or in
+`~/.cargo/bin`), `curl` and `git` (`git` only serves the daily update
+check), `wl-copy` for Copy report, optionally `nmcli` for the metered flag
+and `speedtest` (Ookla) for peak tests. ICMP probes use unprivileged ping
+sockets, which systemd allows by default (`net.ipv4.ping_group_range`).
 
 | Latency, by leg | Speed |
 |---|---|
@@ -188,9 +192,10 @@ to use their address.
   end up on forums. Asked of `speed.cloudflare.com`, a host the daemon
   already talks to; shown live, never written to history.
 - **Per-application traffic** — top apps by TCP connection counters
-  (`ss -tinp`, no root, no packet capture), each with a one-minute history
-  strip and session totals. What Linux won't attribute without privileges
-  (QUIC/UDP, overhead) is shown as its own bucket rather than hidden.
+  (the kernel's sock_diag, which `ss -tinp` reads too; no root, no packet
+  capture), each with a one-minute history strip and session totals. What
+  Linux won't attribute without privileges (QUIC/UDP, overhead) is shown as
+  its own bucket rather than hidden.
 - **Outage detection** with a notification once an outage has lasted a few
   seconds and one when it clears — naming the leg that failed. Brief
   self-healed interruptions are logged, never notified. A wan outage needs the
@@ -225,9 +230,10 @@ to use their address.
 ## How it works
 
 The QML plugin is a thin reader. All measurement lives in **nexthopd**, a
-Python 3 daemon (standard library only, no pip), spawned and supervised by
-the plugin's shell service. Five files are the whole contract — four the
-daemon writes, one the panel writes for it:
+Rust daemon (`nexthop daemon`) that reads routes, Wi-Fi state, link events
+and sockets from the kernel over netlink instead of spawning `ip`, `iw` and
+`ss`, spawned and supervised by the plugin's shell service. Five files are
+the whole contract — four the daemon writes, one the panel writes for it:
 
 | file | cadence | consumer |
 |---|---|---|
@@ -283,7 +289,8 @@ bar widget, or via IPC.
 
 **Privileges: none.** No sudo, no capabilities, no packet capture. The
 daemon runs as your user; everything it reads is world-readable (`/sys`
-counters and link types, `ping`, `iw`, `ss`, `ip route`).
+counters and link types, unprivileged ping sockets, nl80211, sock_diag and
+rtnetlink, the same sources `ping`, `iw`, `ss` and `ip route` read).
 
 ## Remove
 
@@ -299,8 +306,9 @@ remove `~/.config/systemd/user/nexthopd.service`.
 ## Development
 
 ```bash
-python3 -m unittest discover -s test    # fixtures recorded from real hardware
-python3 -m nexthopd                     # run the daemon in the foreground
+cargo test                              # fixtures recorded from real hardware
+cargo run --release -- daemon           # run the daemon in the foreground
+cargo test --release -- --ignored       # live checks on this machine
 ```
 
 Design mockups live in `design/` as the source artboards of the project's

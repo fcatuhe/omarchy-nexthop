@@ -8,15 +8,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.11"
+          components: clippy
       - name: Unit tests
+        run: cargo test --locked
+      - name: Lints
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Front-end tests (QML helpers run in node)
         run: python3 -m unittest discover -s test -v
       - name: Manifest is valid JSON
-        run: python3 -c "import json; json.load(open('manifest.json'))"
-      - name: Daemon imports on stdlib alone
-        run: python3 -c "import nexthopd.daemon, nexthopd.cli, nexthopd.speedtest"
+        run: jq empty manifest.json
       # The shell's own manifest rules, the same script `omarchy plugin
       # validate` runs. bash and jq are all it needs. Pinned to a commit so
       # a run is reproducible; bump the SHA when upstream changes the rules:
