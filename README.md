@@ -31,9 +31,9 @@ the router owns the problem.
 
 - **No root, ever.** No sudo, no capabilities, no packet capture. It runs
   as your user and reads what any process may read.
-- **You won't feel it.** About 1.3 % of one CPU core and ~6 MB of memory
-  (proportional set size), daemon and the shell's readers together — no
-  fan, no stutter, nothing competing with your work.
+- **You won't feel it.** About 1.5 % of one CPU core and ~7 MB of memory,
+  daemon and the shell's readers together — no fan, no stutter, nothing
+  competing with your work.
 - **It doesn't clog your line.** The probes are pings and payload-free
   handshakes and add up to a few MB an hour; the hourly speed check is
   up to about 40 MB on a fast line and a fraction of that on a slower one,
