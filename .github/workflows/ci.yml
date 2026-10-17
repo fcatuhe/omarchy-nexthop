@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -43,6 +46,19 @@ jobs:
         with:
           name: nexthop-x86_64
           path: dist/nexthop-x86_64
+
+  # omarchy plugin update follows the default branch, so it must only pin a binary that is already published.
+  published:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The release of this version exists and matches bin/nexthop.sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "v$(jq -r .version manifest.json)" -p nexthop-x86_64 -D dist
+          cd dist && sha256sum -c ../bin/nexthop.sha256
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
