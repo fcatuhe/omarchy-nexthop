@@ -74,7 +74,15 @@ jobs:
         run: scripts/build-binary
       - name: The build matches bin/nexthop.sha256
         run: cd dist && sha256sum -c ../bin/nexthop.sha256
+      # A tag moved to a rebuilt commit replaces the asset of its existing release.
       - name: Publish the binary on the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/nexthop-x86_64 --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/nexthop-x86_64 --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/nexthop-x86_64 --verify-tag \
+              --title "$GITHUB_REF_NAME (Rust daemon)" \
+              --notes "Nexthop with its daemon rewritten in Rust. bin/nexthop downloads nexthop-x86_64 and runs it only if it matches bin/nexthop.sha256 at this tag."
+          fi
