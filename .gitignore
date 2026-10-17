@@ -1,3 +1,5 @@
+__pycache__/
+*.pyc
 *.bak.*
 design/omarchy-internet-quality-monitor.html
 CLAUDE.local.md
