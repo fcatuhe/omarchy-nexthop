@@ -60,19 +60,19 @@ launch.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/fcatuhe/omarchy-nexthop.git --enable
+omarchy plugin add https://github.com/x3me/omarchy-nexthop.git --enable
 ```
 
 The daemon is a single x86-64 binary with SQLite built in, published on
 each release rather than kept in git, so a clone stays small. On its first
 start after an install or update, `bin/nexthop` downloads the binary for
 this version from the release of the repository you installed from, and
-keeps it only if it matches the SHA-256 in `bin/nexthop.sha256`; CI rebuilds
-it from the source in a pinned image and fails unless that checksum
-matches (`scripts/build-binary`). Requirements: `curl`, `git` and `jq` (all
-present on a stock Omarchy), `wl-copy` for Copy report, optionally `nmcli`
-for the metered flag and `speedtest` (Ookla) for peak tests. ICMP probes use unprivileged ping
-sockets, which systemd allows by default (`net.ipv4.ping_group_range`).
+keeps it in `~/.cache/nexthop` only if it matches the SHA-256 in
+`bin/nexthop.sha256`; CI rebuilds it from the source in a pinned image and
+fails unless that checksum matches (`scripts/build-binary`). Requirements:
+`curl`, `git` and `jq` (all present on a stock Omarchy), `wl-copy` for Copy
+report, optionally `nmcli` for the metered flag and `speedtest` (Ookla) for
+peak tests.
 
 | Latency, by leg | Speed |
 |---|---|
@@ -320,12 +320,15 @@ scripts/build-binary                    # dist/nexthop-x86_64 and its sha256 (ne
 python3 -m unittest discover -s test    # the QML helpers and the launcher
 ```
 
-A change to the source needs the new checksum in `bin/nexthop.sha256` in
-the same commit, or CI fails; the failed run prints the checksum it built
-and keeps the binary as an artifact. A release bumps the version in both
-`manifest.json` and `Cargo.toml` (a test holds them equal) and pushes the
-tag `v<version>`, on which CI publishes the binary to the release. To run a
-local build through the plugin, put it at `bin/.cache/<version>/nexthop`.
+A release changes the binary, so it bumps the version in `manifest.json`
+and `Cargo.toml` (a test holds them equal) and pins the new checksum in
+`bin/nexthop.sha256`: CI prints the checksum it built when it does not
+match, and keeps that binary as an artifact. Push the release commit on a
+branch and tag it `v<version>`; CI publishes the binary on that release.
+Only then fast-forward the default branch, which `omarchy plugin update`
+follows; CI fails on a default branch that pins an unpublished binary. To
+run a local build through the plugin, put it at
+`~/.cache/nexthop/<sha256 in bin/nexthop.sha256>/nexthop`.
 
 Design mockups live in `design/` as the source artboards of the project's
 design canvas.
