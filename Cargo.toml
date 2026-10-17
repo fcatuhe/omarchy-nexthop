@@ -1,6 +1,6 @@
 [package]
 name = "nexthop"
-version = "0.2.72-r"
+version = "0.2.71-r"
 edition = "2024"
 license = "MIT"
 publish = false
