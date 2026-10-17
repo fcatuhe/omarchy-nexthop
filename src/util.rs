@@ -69,7 +69,52 @@ pub fn py_sum(values: impl IntoIterator<Item = f64>) -> f64 {
 }
 
 pub fn fmean(values: &[f64]) -> f64 {
-    values.iter().sum::<f64>() / values.len() as f64
+    fsum(values) / values.len() as f64
+}
+
+pub fn fsum(values: &[f64]) -> f64 {
+    let mut partials: Vec<f64> = Vec::new();
+    for &value in values {
+        let mut x = value;
+        let mut i = 0;
+        for j in 0..partials.len() {
+            let mut y = partials[j];
+            if x.abs() < y.abs() {
+                std::mem::swap(&mut x, &mut y);
+            }
+            let hi = x + y;
+            let lo = y - (hi - x);
+            if lo != 0.0 {
+                partials[i] = lo;
+                i += 1;
+            }
+            x = hi;
+        }
+        partials.truncate(i);
+        partials.push(x);
+    }
+    let Some(&top) = partials.last() else {
+        return 0.0;
+    };
+    let (mut hi, mut lo) = (top, 0.0);
+    let mut n = partials.len() - 1;
+    while n > 0 {
+        let (x, y) = (hi, partials[n - 1]);
+        n -= 1;
+        hi = x + y;
+        lo = y - (hi - x);
+        if lo != 0.0 {
+            break;
+        }
+    }
+    if n > 0 && ((lo < 0.0 && partials[n - 1] < 0.0) || (lo > 0.0 && partials[n - 1] > 0.0)) {
+        let y = lo * 2.0;
+        let x = hi + y;
+        if y == x - hi {
+            hi = x;
+        }
+    }
+    hi
 }
 
 pub fn is_py_line_break(c: char) -> bool {
@@ -140,6 +185,17 @@ mod tests {
     fn start_ticks_of_this_process_and_of_no_process() {
         assert!(proc_start_ticks(std::process::id().into()).is_some_and(|t| t > 0));
         assert_eq!(proc_start_ticks(u32::MAX.into()), None);
+    }
+
+    #[test]
+    fn fmean_rounds_like_python_statistics_fmean() {
+        let rtts: [f64; 5] = [1.81, 0.06, 1.30, 0.27, 0.07];
+        let deltas: Vec<f64> = rtts.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+        // Python 3.14: round(statistics.fmean(deltas), 2) == 1.05, a plain left-to-right sum gives 1.06
+        assert_eq!(py_round(fmean(&deltas), 2), 1.05);
+        assert_eq!(fsum(&[0.1; 10]), 1.0);
+        assert_eq!(fsum(&[1e100, 1.0, -1e100, 1e-100, 1e50, -1.0, -1e50]), 1e-100);
+        assert_eq!(fsum(&[]), 0.0);
     }
 
     #[test]
