@@ -35,7 +35,7 @@ BarWidget {
     id: stateStream
     running: true
     command: ["sh", "-c",
-              'cd "$1" && exec python3 -m nexthopd.cli stream live apps recent',
+              'cd "$1" && exec ./target/release/nexthop stream live apps recent',
               "sh", root.pluginDir]
     stdout: SplitParser {
       splitMarker: "\n"
@@ -221,7 +221,7 @@ BarWidget {
   // script — the same form every other Process here uses.
   Process {
     id: peakRequest
-    command: ["sh", "-c", 'cd "$1" && exec python3 -m nexthopd.cli peak',
+    command: ["sh", "-c", 'cd "$1" && exec ./target/release/nexthop peak',
               "sh", root.pluginDir]
   }
 

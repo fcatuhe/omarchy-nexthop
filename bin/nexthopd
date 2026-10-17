@@ -1,0 +1,10 @@
+#!/bin/sh
+# Starts the daemon, building the release binary first when the sources are newer.
+set -eu
+cd "$(dirname "$(realpath "$0")")/.."
+bin=target/release/nexthop
+if [ ! -x "$bin" ] || [ -n "$(find src Cargo.toml Cargo.lock manifest.json -newer "$bin" -print -quit)" ]; then
+  cargo=$(command -v cargo || echo "$HOME/.cargo/bin/cargo")
+  "$cargo" build --release --locked --quiet
+fi
+exec "$bin" daemon

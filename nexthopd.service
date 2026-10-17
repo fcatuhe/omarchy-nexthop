@@ -27,7 +27,7 @@ Description=Nexthop internet quality monitor daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 -m nexthopd
+ExecStart=@PLUGIN_DIR@/bin/nexthopd
 WorkingDirectory=@PLUGIN_DIR@
 Restart=always
 RestartPreventExitStatus=3
