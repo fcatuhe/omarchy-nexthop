@@ -257,7 +257,7 @@ impl PingProbe {
                 Ok(()) => backoff = 1.0,
                 Err(err) => {
                     if backoff == 1.0 && !self.target.is_empty() {
-                        eprintln!("nexthop: {} {}: {err}", self.thread_name, self.target);
+                        crate::util::complain!("nexthop: {} {}: {err}", self.thread_name, self.target);
                     }
                     self.wake.wait(backoff.min(MAX_BACKOFF_S));
                     backoff = (backoff * 2.0).min(MAX_BACKOFF_S);

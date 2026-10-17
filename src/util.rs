@@ -2,6 +2,15 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// INFO: fc 17oct26 eprintln! panics when stderr is a closed pipe, and the release build aborts on panic
+macro_rules! complain {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+pub(crate) use complain;
+
 pub type Job = Box<dyn FnOnce() + Send>;
 pub type Spawn = Box<dyn Fn(Job) -> io::Result<()> + Send + Sync>;
 

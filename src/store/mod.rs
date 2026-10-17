@@ -234,7 +234,7 @@ impl Store {
         if let Some(conn) = self.db.lock().unwrap().take()
             && let Err((_, e)) = conn.close()
         {
-            eprintln!("nexthop: closing {}: {e}", self.path.display());
+            crate::util::complain!("nexthop: closing {}: {e}", self.path.display());
         }
     }
 

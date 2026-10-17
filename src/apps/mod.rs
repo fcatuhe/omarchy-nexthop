@@ -309,7 +309,7 @@ impl AppTraffic {
             Err(e) => {
                 let msg = e.to_string();
                 if self.last_error.as_deref() != Some(msg.as_str()) {
-                    eprintln!("nexthop: app traffic: sock_diag failed: {msg}");
+                    crate::util::complain!("nexthop: app traffic: sock_diag failed: {msg}");
                 }
                 self.last_error = Some(msg);
                 false

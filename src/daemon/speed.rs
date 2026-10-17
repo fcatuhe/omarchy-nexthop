@@ -135,7 +135,7 @@ impl Daemon {
                     ..TestRow::default()
                 };
                 if let Err(e) = store.put_test(r.started as i64, "content", r.engine, &row) {
-                    eprintln!("nexthopd: storing the content check: {e}");
+                    crate::util::complain!("nexthopd: storing the content check: {e}");
                     return;
                 }
                 workers.baseline_stale.store(true, Ordering::SeqCst);
@@ -213,7 +213,7 @@ impl Daemon {
                 TestRow { ok: false, network: Some(network), vpn, asked: Some(true), ..TestRow::default() }
             };
             if let Err(e) = store.put_test(ts, "peak", &engine, &row) {
-                eprintln!("nexthopd: storing the peak test: {e}");
+                crate::util::complain!("nexthopd: storing the peak test: {e}");
             }
         });
         if let Err(e) = (self.hooks.spawn)("peak-test", job) {

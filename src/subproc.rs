@@ -116,7 +116,7 @@ impl<'a> Running<'a> {
             Ok(Some(status)) => self.code = Some(exit_code(status)),
             Ok(None) => {}
             Err(e) => {
-                eprintln!("nexthop: waiting for child {}: {e}", self.child.id());
+                crate::util::complain!("nexthop: waiting for child {}: {e}", self.child.id());
                 self.code = Some(-1);
             }
         }
@@ -150,7 +150,7 @@ pub fn run_many(cmds: Vec<Command>, input: Option<&[u8]>, capture: bool, timeout
         let Ok(child) = cmd.spawn() else { continue };
         match Running::new(child, input.unwrap_or_default()) {
             Ok(running) => procs.push((spawned, running)),
-            Err(e) => eprintln!("nexthop: cannot watch {:?}: {e}", cmd.get_program()),
+            Err(e) => crate::util::complain!("nexthop: cannot watch {:?}: {e}", cmd.get_program()),
         }
     }
     let deadline = monotonic() + timeout;
@@ -188,7 +188,7 @@ pub fn run_many(cmds: Vec<Command>, input: Option<&[u8]>, capture: bool, timeout
             if err.kind() == ErrorKind::Interrupted {
                 continue;
             }
-            eprintln!("nexthop: poll on child pipes: {err}");
+            crate::util::complain!("nexthop: poll on child pipes: {err}");
             break;
         }
         for (fd, &(i, watch)) in fds.iter().zip(&owners) {

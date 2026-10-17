@@ -106,7 +106,7 @@ impl CaptiveWatch {
             shared.inflight = false;
         }));
         if let Err(e) = started {
-            eprintln!("nexthopd: cannot start the reachability check: {e}");
+            crate::util::complain!("nexthopd: cannot start the reachability check: {e}");
             self.shared.lock().unwrap().inflight = false;
         }
         self.collect(now);

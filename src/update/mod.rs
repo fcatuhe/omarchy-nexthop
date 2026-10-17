@@ -186,7 +186,7 @@ impl UpdateWatch {
             s.inflight = true;
         }
         if let Err(e) = (self.spawn)(self.run_check()) {
-            eprintln!("nexthop: cannot start the update check: {e}");
+            crate::util::complain!("nexthop: cannot start the update check: {e}");
             self.shared.lock().unwrap().inflight = false;
         }
         self.collect(now);

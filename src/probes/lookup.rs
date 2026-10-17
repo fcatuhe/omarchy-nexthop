@@ -38,7 +38,7 @@ pub fn getaddrinfo(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
 
 fn in_thread(job: Job) {
     if let Err(err) = spawn_named("lookup", job) {
-        eprintln!("nexthop: lookup thread: {err}");
+        crate::util::complain!("nexthop: lookup thread: {err}");
     }
 }
 

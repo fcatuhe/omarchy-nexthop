@@ -185,7 +185,7 @@ impl Daemon {
 
     pub fn run(&mut self) -> i32 {
         if !self.acquire_lock() {
-            eprintln!("nexthopd: another instance holds the lock, exiting");
+            crate::util::complain!("nexthopd: another instance holds the lock, exiting");
             return EXIT_LOCK_HELD;
         }
         let now = self.now();
@@ -193,7 +193,7 @@ impl Daemon {
             retire_legacy_snapshots(&self.state_dir, &self.runtime_dir, Some(now)).map_err(|e| e.to_string())
         });
         if let Err(e) = prepared {
-            eprintln!("nexthopd: {e}");
+            crate::util::complain!("nexthopd: {e}");
             return 1;
         }
         let outcome = self.start_all();
@@ -206,7 +206,7 @@ impl Daemon {
         match outcome {
             Ok(()) => 0,
             Err(e) => {
-                eprintln!("nexthopd: {e}");
+                crate::util::complain!("nexthopd: {e}");
                 1
             }
         }
@@ -217,7 +217,7 @@ pub fn main() -> i32 {
     match Daemon::new() {
         Ok(mut daemon) => daemon.run(),
         Err(e) => {
-            eprintln!("nexthopd: {e}");
+            crate::util::complain!("nexthopd: {e}");
             1
         }
     }
