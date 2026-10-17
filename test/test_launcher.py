@@ -31,6 +31,7 @@ class Launcher(unittest.TestCase):
         self.root = self.tmp / "plugin"
         (self.root / "bin").mkdir(parents=True)
         shutil.copy(REPO / "bin" / "nexthop", self.root / "bin" / "nexthop")
+        shutil.copytree(REPO / "nexthopd", self.root / "nexthopd")
         (self.root / "manifest.json").write_text(json.dumps({"version": "9.9.9"}))
         self.served = self.tmp / "served"
         self.served.write_text(FAKE_BINARY)
@@ -129,6 +130,12 @@ class Launcher(unittest.TestCase):
         self.assertEqual(self.run_launcher("live").returncode, 0)
         self.assertEqual(len(self.downloads()), 2)
         self.assertTrue(self.exe().exists())
+
+    def test_the_python_entry_points_of_0_2_71_run_the_launcher(self):
+        daemon = self.run_in_root(sys.executable, "-B", "-m", "nexthopd")
+        self.assertEqual(daemon.stdout, f"ran {self.exe()} daemon from {self.root}\n", daemon.stderr)
+        cli = self.run_in_root(sys.executable, "-B", "-m", "nexthopd.cli", "retire", "--pid", "7")
+        self.assertEqual(cli.stdout, f"ran {self.exe()} retire --pid 7 from {self.root}\n", cli.stderr)
 
 
 if __name__ == "__main__":
