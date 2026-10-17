@@ -1,6 +1,6 @@
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
@@ -10,8 +10,15 @@ use crate::util::{read_capped, start_ticks_from_stat};
 pub fn is_daemon_argv(argv: &[String]) -> bool {
     match argv {
         [exe, verb] => (exe == "nexthop" || exe.ends_with("/nexthop")) && verb == "daemon",
+        [python, flag, module] => is_python_daemon(python, flag, module),
         _ => false,
     }
+}
+
+// TODO: fc 17oct26 the Python daemon this release replaces must stay retirable; remove once 0.2.71 installs have updated
+fn is_python_daemon(python: &str, flag: &str, module: &str) -> bool {
+    let name = python.rsplit('/').next().unwrap_or(python);
+    name.contains("python") && flag == "-m" && module == "nexthopd"
 }
 
 pub fn authorized_to_retire(pid: i64, want_start: i64) -> bool {
@@ -42,7 +49,8 @@ pub fn authorized_to_retire(pid: i64, want_start: i64) -> bool {
 }
 
 pub fn lock_holder_pid(lock: &Path) -> i64 {
-    let Ok(mut file) = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).open(lock) else {
+    let flags = libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK;
+    let Ok(mut file) = OpenOptions::new().read(true).custom_flags(flags).open(lock) else {
         return 0;
     };
     match file.metadata() {
@@ -63,10 +71,34 @@ pub fn lock_holder_pid(lock: &Path) -> i64 {
     0
 }
 
-pub fn kill(pid: i64, sig: i32) -> io::Result<()> {
-    let pid = libc::pid_t::try_from(pid).map_err(|_| io::Error::from_raw_os_error(libc::ESRCH))?;
-    // SAFETY: kill has no memory-safety preconditions.
-    if unsafe { libc::kill(pid, sig) } == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
+pub struct Pinned {
+    #[cfg(test)]
+    pub pid: i64,
+    fd: OwnedFd,
+}
+
+pub fn pin(pid: i64) -> io::Result<Pinned> {
+    let raw = libc::pid_t::try_from(pid).map_err(|_| io::Error::from_raw_os_error(libc::ESRCH))?;
+    // SAFETY: pidfd_open takes a pid and flags and returns a new descriptor or -1.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, raw, 0) };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fd is a freshly opened descriptor nobody else owns.
+    let fd = unsafe { OwnedFd::from_raw_fd(fd as i32) };
+    Ok(Pinned {
+        #[cfg(test)]
+        pid,
+        fd,
+    })
+}
+
+pub fn kill(target: &Pinned, sig: i32) -> io::Result<()> {
+    // SAFETY: the pidfd stays open for the call; a null siginfo is allowed.
+    let rc = unsafe {
+        libc::syscall(libc::SYS_pidfd_send_signal, target.fd.as_raw_fd(), sig, std::ptr::null::<libc::siginfo_t>(), 0)
+    };
+    if rc == 0 { Ok(()) } else { Err(io::Error::last_os_error()) }
 }
 
 #[cfg(test)]
@@ -82,6 +114,10 @@ mod tests {
         assert!(!is_daemon_argv(&argv(&["nexthop", "daemon", "--x"])));
         assert!(!is_daemon_argv(&argv(&["nexthop", "stream", "live"])));
         assert!(!is_daemon_argv(&argv(&["nexthop"])));
-        assert!(!is_daemon_argv(&argv(&["python3", "-m", "nexthopd"])));
+        assert!(is_daemon_argv(&argv(&["python3", "-m", "nexthopd"])));
+        assert!(is_daemon_argv(&argv(&["/usr/bin/python3.14", "-m", "nexthopd"])));
+        assert!(!is_daemon_argv(&argv(&["python3", "-m", "nexthopd.cli"])));
+        assert!(!is_daemon_argv(&argv(&["python3", "-c", "nexthopd"])));
+        assert!(!is_daemon_argv(&argv(&["/usr/bin/sh", "-m", "nexthopd"])));
     }
 }

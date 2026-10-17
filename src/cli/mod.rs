@@ -43,7 +43,7 @@ fn emit(out: &mut dyn Write, obj: &Value) -> io::Result<()> {
 }
 
 type Sink<'a> = &'a mut dyn Write;
-type Kill<'a> = &'a mut dyn FnMut(i64, i32) -> io::Result<()>;
+type Kill<'a> = &'a mut dyn FnMut(&procs::Pinned, i32) -> io::Result<()>;
 
 fn cmd_live(out: Sink) -> io::Result<i32> {
     emit(out, &read_json(&live_path(), READ_JSON_MAX).unwrap_or_else(|| json!({"state": "no-daemon"})))?;
@@ -54,10 +54,13 @@ pub fn retire(pid: i64, start: i64, kill: Kill) -> i32 {
     if pid <= 0 || pid == std::process::id() as i64 {
         return 1;
     }
+    let Ok(target) = procs::pin(pid) else {
+        return 1;
+    };
     if !authorized_to_retire(pid, start) {
         return 1;
     }
-    match kill(pid, libc::SIGTERM) {
+    match kill(&target, libc::SIGTERM) {
         Ok(()) => 0,
         Err(_) => 1,
     }
@@ -133,10 +136,13 @@ pub fn peak(lock: &Path, live: &Path, kill: Kill) -> (i32, Value) {
     let live = read_json(live, READ_JSON_MAX).unwrap_or(Value::Null);
     let named = live.get("pid").and_then(Value::as_f64) == Some(pid as f64);
     let want_start = if named { py_int_of(live.get("pid_start")) } else { 0 };
+    let Ok(target) = procs::pin(pid) else {
+        return not_running();
+    };
     if !authorized_to_retire(pid, want_start) {
         return (1, json!({"ok": false, "error": "lock holder is not nexthopd"}));
     }
-    match kill(pid, libc::SIGUSR1) {
+    match kill(&target, libc::SIGUSR1) {
         Ok(()) => (0, json!({"ok": true})),
         Err(_) => not_running(),
     }

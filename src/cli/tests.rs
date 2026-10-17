@@ -112,15 +112,15 @@ fn retire_refuses_a_stranger_without_signalling() {
     let mut killed = Vec::new();
     let p = spawn_as("yes", &[]);
     assert_eq!(
-        retire(p.pid(), 0, &mut |pid, sig| {
-            killed.push((pid, sig));
+        retire(p.pid(), 0, &mut |target, sig| {
+            killed.push((target.pid, sig));
             Ok(())
         }),
         1
     );
     assert_eq!(
-        retire(std::process::id() as i64, 0, &mut |pid, sig| {
-            killed.push((pid, sig));
+        retire(std::process::id() as i64, 0, &mut |target, sig| {
+            killed.push((target.pid, sig));
             Ok(())
         }),
         1
@@ -134,8 +134,8 @@ fn retire_signals_a_verified_daemon_with_sigterm() {
     let p = daemon_shaped(&d);
     let mut killed = Vec::new();
     assert_eq!(
-        retire(p.pid(), ticks(p.pid()), &mut |pid, sig| {
-            killed.push((pid, sig));
+        retire(p.pid(), ticks(p.pid()), &mut |target, sig| {
+            killed.push((target.pid, sig));
             Ok(())
         }),
         0
@@ -164,8 +164,8 @@ impl Peak {
     fn run(&mut self) -> (i32, Value) {
         let (lock, live) = (self.lock(), self.live());
         let killed = &mut self.killed;
-        peak(&lock, &live, &mut |pid, sig| {
-            killed.push((pid, sig));
+        peak(&lock, &live, &mut |target, sig| {
+            killed.push((target.pid, sig));
             Ok(())
         })
     }
@@ -475,4 +475,23 @@ fn save_config_takes_exactly_one_argument() {
     assert!(matches!(parse(&["save-config".into(), "{}".into(), "{}".into()]), Parsed::Exit { code: 2, .. }));
     let Parsed::Run(args) = parse(&["save-config".into(), "{}".into()]) else { panic!() };
     assert_eq!(args.keys, ["{}"]);
+}
+
+#[test]
+fn a_fifo_at_the_lock_path_is_not_a_daemon_and_does_not_block() {
+    let d = TempDir::new();
+    let lock = d.path().join("nexthopd.lock");
+    let c = std::ffi::CString::new(lock.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: c is a valid NUL-terminated path.
+    assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+    assert_eq!(lock_holder_pid(&lock), 0);
+}
+
+#[test]
+fn a_pinned_process_that_exited_cannot_be_signalled() {
+    let mut p = spawn_as("yes", &[]);
+    let target = procs::pin(p.pid()).unwrap();
+    p.0.kill().unwrap();
+    p.0.wait().unwrap();
+    assert!(procs::kill(&target, 0).is_err());
 }
