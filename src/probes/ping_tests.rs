@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::icmp::*;
-use super::ping::{PingEvent, PingTracker, Sequencer, seq_after};
+use super::ping::{PingEvent, PingTracker, Sequencer, on_icmp_error, seq_after};
 use super::*;
 
 fn reply(t: f64, seq: u16, rtt: f64) -> PingEvent {
@@ -210,16 +210,36 @@ fn the_unanswered_seq_is_announced_when_the_next_goes_out() {
 }
 
 #[test]
-fn an_icmp_error_counts_as_answered_and_a_deferred_send_repeats_the_announcement() {
+fn an_unreachable_error_answers_once_and_a_deferred_send_repeats_the_announcement() {
+    let (series, mut tracker) = replay(&[]);
     let mut q = Sequencer::default();
     q.sent(false);
-    q.answered(1);
-    assert_eq!(q.due(1.0), None);
+    on_icmp_error(IcmpError { seq: 1, unreachable: true }, 1.0, &mut tracker, &mut q);
+    assert_eq!(q.due(1.5), None);
+    assert_eq!(series.all().iter().map(|s| s.rtt).collect::<Vec<_>>(), [None]);
     q.sent(false);
     q.sent(true);
     // seq 2 is still the newest sent, as with the fixture's repeated seq 5
     assert_eq!(q.due(2.0), Some(pending(2.0, 2)));
     assert_eq!(q.next, 3);
+}
+
+// ping -O prints "no answer yet" after a Time to live exceeded, so Python charged the request as lost
+#[test]
+fn an_error_that_is_not_unreachable_leaves_the_request_to_be_charged_lost() {
+    let (series, mut tracker) = replay(&[]);
+    let mut q = Sequencer::default();
+    q.sent(false);
+    on_icmp_error(IcmpError { seq: 1, unreachable: false }, 1.0, &mut tracker, &mut q);
+    assert!(series.all().is_empty());
+    let announced = q.due(1.5).unwrap();
+    assert_eq!(announced, pending(1.5, 1));
+    tracker.consume(announced);
+    for (i, t) in [2.0, 2.5, 3.0, 3.5, 4.0].into_iter().enumerate() {
+        tracker.consume(reply(t, 2 + i as u16, 10.0));
+    }
+    let lost: Vec<f64> = series.all().iter().filter(|s| s.rtt.is_none()).map(|s| s.t).collect();
+    assert_eq!(lost, [1.5]);
 }
 
 #[test]

@@ -343,15 +343,20 @@ impl PingProbe {
             };
             read_any = true;
             if let Received::Error(err) = received {
-                seqs.answered(err.seq);
-                if err.unreachable {
-                    tracker.consume(PingEvent::Unreachable { t: now(), seq: err.seq });
-                }
+                on_icmp_error(err, now(), tracker, seqs);
             }
         }
         if !read_any {
             sock.clear_pending_error();
         }
+    }
+}
+
+// INFO: fc 17oct26 as ping -O: only unreachable answers a request, any other error leaves it pending and so charged as lost
+pub fn on_icmp_error(err: icmp::IcmpError, t: f64, tracker: &mut PingTracker, seqs: &mut Sequencer) {
+    if err.unreachable {
+        seqs.answered(err.seq);
+        tracker.consume(PingEvent::Unreachable { t, seq: err.seq });
     }
 }
 
